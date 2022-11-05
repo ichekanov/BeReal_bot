@@ -43,10 +43,10 @@ def calculate_time() -> int:
     Returns
         Time delta in seconds until the next notification.
     """
-    return 30*60
+    # return 30*60
     curr = datetime.now()
-    hour = randint(BEGIN_HOUR, END_HOUR)
-    minute = randint(0, 60)
+    hour = randint(BEGIN_HOUR, END_HOUR-1)
+    minute = randint(0, 59)
     nxt = datetime(curr.year, curr.month, curr.day+1, hour, minute, 0)
     delta = nxt.timestamp() - curr.timestamp()
     return delta
@@ -215,4 +215,3 @@ if __name__ == '__main__':
     client.loop.create_task(notify())
     print("Bot started!\n")
     client.run_until_disconnected()
-
