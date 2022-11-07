@@ -23,7 +23,8 @@ BOT_TOKEN = config.get('default', 'BOT_TOKEN')
 
 client = TelegramClient('session_master', API_ID, API_HASH)
 
-session = {"users": {}, "chats": [], "next_round": 0}
+session = {"users": {}, "chats": {},
+           "next_round": datetime.fromtimestamp(0).isoformat()}
 photos_are_accepted = False
 
 
@@ -45,9 +46,13 @@ def calculate_time() -> int:
     """
     # return 30*60
     curr = datetime.now()
+    if datetime.fromisoformat(session["next_round"]) > datetime.now():
+        return datetime.fromisoformat(session["next_round"]).timestamp() - curr.timestamp()
     hour = randint(BEGIN_HOUR, END_HOUR-1)
     minute = randint(0, 59)
     nxt = datetime(curr.year, curr.month, curr.day+1, hour, minute, 0)
+    session["next_round"] = nxt.isoformat()
+    update_file()
     delta = nxt.timestamp() - curr.timestamp()
     return delta
 
@@ -81,7 +86,7 @@ async def notify() -> None:
 
         photos_are_accepted = True
         for m in session["users"].keys():
-            session["users"][m]["posted_media"] = None
+            session["users"][m]["posted_media"] = False
         update_file()
         all_user_ids = [int(m) for m in session["users"].keys()]
         for user_id in all_user_ids:
@@ -99,7 +104,7 @@ async def notify() -> None:
         photos_are_accepted = False
         await send_photos()
         for m in session["users"].keys():
-            session["users"][m]["posted_media"] = None
+            session["users"][m]["posted_media"] = False
         update_file()
 
 
@@ -112,12 +117,15 @@ async def send_photos():
         async for tg_user in client.iter_participants(chat_id):
             if not tg_user.id in all_user_ids:
                 continue
-            media_type = session["users"][str(tg_user.id)]["posted_media"]
-            if not media_type:
+            user = session["users"][str(tg_user.id)]
+            posted_media = user["posted_media"]
+            if not posted_media:
                 continue
-            path = session["users"][str(tg_user.id)]["media_path"]
-            name = session["users"][str(tg_user.id)]["name"]
-            photo_msg = f"{name}, @{tg_user.username}"
+            media_type = user["media_type"]
+            path = user["media_path"]
+            name = user["name"]
+            time = datetime.fromisoformat(user["timestamp"]).strftime("%H:%M")
+            photo_msg = f"<b>{name}</b>, @{tg_user.username}\n{time}"
             if media_type == "photo":
                 await client.send_file(chat_id, path, caption=photo_msg, parse_mode="HTML")
             elif media_type == "video":
@@ -139,9 +147,12 @@ async def start(event):
         name = sender.first_name
     global session
     session["users"][str(sender.id)] = {
-        "name": name, 
-        "posted_media": None, 
-        "media_path": ""
+        "name": name,
+        "registered_at": datetime.now().isoformat(),
+        "posted_media": False,
+        "media_type": None,
+        "media_path": "",
+        "timestamp": datetime.fromtimestamp(0).isoformat()
     }
     update_file()
     await client.send_message(sender.id, msg.BEGIN, parse_mode="HTML")
@@ -175,8 +186,10 @@ async def handle_image(event):
     if photos_are_accepted:
         path = await client.download_media(event.photo, f"./pics/{sender.id}.jpg")
         global session
-        session["users"][str(sender.id)]["posted_media"] = "photo"
+        session["users"][str(sender.id)]["posted_media"] = True
+        session["users"][str(sender.id)]["media_type"] = "photo"
         session["users"][str(sender.id)]["media_path"] = path
+        session["users"][str(sender.id)]["timestamp"] = datetime.now().isoformat()
         update_file()
         await client.send_message(sender.id, msg.PHOTO_OK, parse_mode="HTML")
     else:
@@ -185,15 +198,17 @@ async def handle_image(event):
 
 
 @client.on(NewMessage(func=lambda e: e.video and e.is_private))
-async def handle_image(event):
+async def handle_video(event):
     """
     Checks time and, if it is correct, saves video id and changes the user status.
     """
     sender = await event.get_sender()
     if photos_are_accepted:
         global session
-        session["users"][str(sender.id)]["posted_media"] = "video"
-        session["users"][str(sender.id)]["media_path"] = event.video.id
+        session["users"][str(sender.id)]["posted_media"] = True
+        session["users"][str(sender.id)]["media_type"] = "video"
+        session["users"][str(sender.id)]["media_path"] = event.file.id
+        session["users"][str(sender.id)]["timestamp"] = datetime.now().isoformat()
         update_file()
         await client.send_message(sender.id, msg.VIDEO_OK, parse_mode="HTML")
     else:
@@ -225,7 +240,10 @@ async def on_added(event):
     if event.chat_id in session["chats"]:
         print(f"Chat \"{event.chat.title}\" is already added\n")
     else:
-        session["chats"].append(event.chat_id)
+        session["chats"][event.chat_id] = {
+            "added_at": datetime.now().isoformat(),
+            "last_activity": datetime.fromtimestamp(0).isoformat()
+        }
         update_file()
         print(f"Chat \"{event.chat.title}\" was successfully added\n")
     await client.send_message(event.chat_id, msg.JOINED_CHAT, parse_mode="HTML")
