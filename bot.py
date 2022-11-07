@@ -64,6 +64,7 @@ async def custom_message():
     """
     while True:
         message = await client.loop.run_in_executor(None, input)
+        message = message.replace("\\n", "\n")
         print(f"Your message:\n{message}\n\nSend? [y/n]: ", end="")
         result = await client.loop.run_in_executor(None, input)
         if result.lower() not in ("y", "yes"):
