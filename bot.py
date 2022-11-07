@@ -52,6 +52,23 @@ def calculate_time() -> int:
     return delta
 
 
+async def custom_message():
+    """
+    Sends custom messages to all bot users.
+    E.g.: to inform about recent changes.
+    """
+    while True:
+        message = await client.loop.run_in_executor(None, input)
+        print(f"Your message:\n{message}\n\nSend? [y/n]: ", end="")
+        result = await client.loop.run_in_executor(None, input)
+        if result.lower() not in ("y", "yes"):
+            print("Cancelled\n")
+            continue
+        for user_id in session["users"].keys():
+            await client.send_message(int(user_id), message, parse_mode="HTML")
+        print("Success\n")
+
+
 async def notify() -> None:
     """
     Waits until next notification, then sends two notifications and finally sends photos to chats.
@@ -242,5 +259,6 @@ if __name__ == '__main__':
         update_file()
     client.start(bot_token=BOT_TOKEN)
     client.loop.create_task(notify())
+    client.loop.create_task(custom_message())
     print("Bot started!\n")
     client.run_until_disconnected()
