@@ -64,15 +64,15 @@ async def notify() -> None:
 
         photos_are_accepted = True
         for m in session["users"].keys():
-            session["users"][m]["posted_photo"] = False
+            session["users"][m]["posted_media"] = None
         update_file()
         all_user_ids = [int(m) for m in session["users"].keys()]
         for user_id in all_user_ids:
             await client.send_message(user_id, msg.PHOTO_BEGIN, parse_mode="HTML")
         await asyncio.sleep((OVERALL_TIME-NOTIFY_TIME)*60)
 
-        no_photos = [m for m in all_user_ids if not 
-                     session["users"][str(m)]["posted_photo"]]
+        no_photos = [m for m in all_user_ids if not
+                     session["users"][str(m)]["posted_media"]]
         for user_id in no_photos:
             await client.send_message(user_id, msg.PHOTO_RUNOUT, parse_mode="HTML")
         await asyncio.sleep(NOTIFY_TIME*60)
@@ -82,7 +82,7 @@ async def notify() -> None:
         photos_are_accepted = False
         await send_photos()
         for m in session["users"].keys():
-            session["users"][m]["posted_photo"] = False
+            session["users"][m]["posted_media"] = None
         update_file()
 
 
@@ -93,12 +93,19 @@ async def send_photos():
     all_user_ids = [int(m) for m in session["users"].keys()]
     for chat_id in session["chats"]:
         async for tg_user in client.iter_participants(chat_id):
-            if tg_user.id in all_user_ids:
-                if session["users"][str(tg_user.id)]["posted_photo"]:
-                    photo_path = f"./pics/{tg_user.id}.jpg"
-                    name = session["users"][str(tg_user.id)]["name"]
-                    photo_msg = f"{name}, @{tg_user.username}"
-                    await client.send_file(chat_id, photo_path, caption=photo_msg, parse_mode="HTML")
+            if not tg_user.id in all_user_ids:
+                continue
+            media_type = session["users"][str(tg_user.id)]["posted_media"]
+            if not media_type:
+                continue
+            path = session["users"][str(tg_user.id)]["media_path"]
+            name = session["users"][str(tg_user.id)]["name"]
+            photo_msg = f"{name}, @{tg_user.username}"
+            if media_type == "photo":
+                await client.send_file(chat_id, path, caption=photo_msg, parse_mode="HTML")
+            elif media_type == "video":
+                await client.send_file(chat_id, path)
+                await client.send_message(chat_id, photo_msg, parse_mode="HTML")
 
 
 @client.on(NewMessage(pattern=r"(?i)^/start$", func=lambda e: e.is_private))
@@ -114,7 +121,11 @@ async def start(event):
     else:
         name = sender.first_name
     global session
-    session["users"][str(sender.id)] = {"name": name, "posted_photo": False}
+    session["users"][str(sender.id)] = {
+        "name": name, 
+        "posted_media": None, 
+        "media_path": ""
+    }
     update_file()
     await client.send_message(sender.id, msg.BEGIN, parse_mode="HTML")
     raise StopPropagation
@@ -147,9 +158,27 @@ async def handle_image(event):
     if photos_are_accepted:
         path = await client.download_media(event.photo, f"./pics/{sender.id}.jpg")
         global session
-        session["users"][str(sender.id)]["posted_photo"] = True
+        session["users"][str(sender.id)]["posted_media"] = "photo"
+        session["users"][str(sender.id)]["media_path"] = path
         update_file()
         await client.send_message(sender.id, msg.PHOTO_OK, parse_mode="HTML")
+    else:
+        await client.send_message(sender.id, msg.PHOTO_BAD, parse_mode="HTML")
+    raise StopPropagation
+
+
+@client.on(NewMessage(func=lambda e: e.video and e.is_private))
+async def handle_image(event):
+    """
+    Checks time and, if it is correct, saves video id and changes the user status.
+    """
+    sender = await event.get_sender()
+    if photos_are_accepted:
+        global session
+        session["users"][str(sender.id)]["posted_media"] = "video"
+        session["users"][str(sender.id)]["media_path"] = event.video.id
+        update_file()
+        await client.send_message(sender.id, msg.VIDEO_OK, parse_mode="HTML")
     else:
         await client.send_message(sender.id, msg.PHOTO_BAD, parse_mode="HTML")
     raise StopPropagation
