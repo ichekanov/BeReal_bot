@@ -115,6 +115,7 @@ async def send_photos():
     """
     all_user_ids = [int(m) for m in session["users"].keys()]
     for chat_id in session["chats"]:
+        chat_id = int(chat_id)
         async for tg_user in client.iter_participants(chat_id):
             if not tg_user.id in all_user_ids:
                 continue
