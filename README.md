@@ -17,5 +17,5 @@ _Таким образом реализуется достаточный уро�
 
 ## Запуск
 Необходим python >3.8  
-`pip install requirements.txt`  
+`pip install -r requirements.txt`  
 `python3 bot.py`
