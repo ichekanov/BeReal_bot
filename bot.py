@@ -3,9 +3,11 @@ import configparser
 import json
 from datetime import datetime
 from random import randint
+import logging
 
 from telethon import TelegramClient
 from telethon.events import ChatAction, NewMessage, StopPropagation
+from telethon.errors.rpcerrorlist import UserIsBlockedError
 
 import messages as msg
 
@@ -54,6 +56,7 @@ def calculate_time() -> int:
     session["next_round"] = nxt.isoformat()
     update_file()
     delta = nxt.timestamp() - curr.timestamp()
+    logging.info("Next notification will be sent at %s", nxt.strftime("%d-%b-%y %H:%M:%S"))
     return delta
 
 
@@ -71,8 +74,16 @@ async def custom_message():
             print("Cancelled\n")
             continue
         for user_id in session["users"].keys():
-            await client.send_message(int(user_id), message, parse_mode="HTML")
+            try:
+                await client.send_message(int(user_id), message, parse_mode="HTML")
+            except Exception as exc:
+                logging.exception("Error while sending message to %s: %s", user_id, exc)
+                if isinstance(exc, UserIsBlockedError):
+                    session["users"].pop(user_id)
+                    logging.info("User %s is blocked, removing from database", user_id)
+                    update_file()
         print("Success\n")
+        logging.info('Sent message "%s" to all %d users', message, len(session["users"]))
 
 
 async def notify() -> None:
@@ -101,12 +112,20 @@ async def notify() -> None:
         await asyncio.sleep(NOTIFY_TIME*60)
 
         for user_id in all_user_ids:
-            await client.send_message(user_id, msg.PHOTO_END, parse_mode="HTML")
+            try:
+                await client.send_message(user_id, msg.PHOTO_END, parse_mode="HTML")
+            except Exception as exc:
+                logging.exception("Error while sending message to %d: %s", user_id, exc)
+                if isinstance(exc, UserIsBlockedError):
+                    session["users"].pop(str(user_id))
+                    logging.info("User %d is blocked, removing from database", user_id)
+                    update_file()
         photos_are_accepted = False
         await send_photos()
         for m in session["users"].keys():
             session["users"][m]["posted_media"] = False
         update_file()
+        logging.info("Sent photos to %d chats", len(session["chats"]))
 
 
 async def send_photos():
@@ -128,11 +147,14 @@ async def send_photos():
             name = user["name"]
             time = datetime.fromisoformat(user["timestamp"]).strftime("%H:%M")
             photo_msg = f"<b>{name}</b>, @{tg_user.username}\n{time}"
-            if media_type == "photo":
-                await client.send_file(chat_id, path, caption=photo_msg, parse_mode="HTML")
-            elif media_type == "video":
-                await client.send_file(chat_id, path)
-                await client.send_message(chat_id, photo_msg, parse_mode="HTML")
+            try:
+                if media_type == "photo":
+                    await client.send_file(chat_id, path, caption=photo_msg, parse_mode="HTML")
+                elif media_type == "video":
+                    await client.send_file(chat_id, path)
+                    await client.send_message(chat_id, photo_msg, parse_mode="HTML")
+            except Exception as exc:
+                logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
 
 
 @client.on(NewMessage(pattern=r"(?i)^/start$", func=lambda e: e.is_private))
@@ -142,7 +164,7 @@ async def start(event):
     Function adds user from mailing list.
     """
     sender = await event.get_sender()
-    print(f"New user: {sender.first_name} {sender.last_name}\n")
+    logging.info("New user: %s %s", sender.first_name, sender.last_name)
     if sender.last_name:
         name = f"{sender.first_name} {sender.last_name}"
     else:
@@ -170,10 +192,9 @@ async def stop(event):
     sender = await event.get_sender()
     global session
     if (session["users"].pop(str(sender.id), None)):
-        print(f"User removed: {sender.first_name} {sender.last_name}\n")
+        logging.info("User removed: %s %s", sender.first_name, sender.last_name)
     else:
-        print(
-            f"The user \"{sender.first_name} {sender.last_name}\" was deleted earlier\n")
+        logging.info("User removed earlier: %s %s", sender.first_name, sender.last_name)
     update_file()
     await client.send_message(sender.id, msg.END, parse_mode="HTML")
     raise StopPropagation
@@ -212,7 +233,7 @@ async def handle_video(event):
         session["users"][str(sender.id)]["media_path"] = event.file.id
         session["users"][str(sender.id)]["timestamp"] = datetime.now().isoformat()
         update_file()
-        await client.send_message(sender.id, msg.VIDEO_OK, parse_mode="HTML")
+        await client.send_message(sender.id, msg.CIRCLE_OK, parse_mode="HTML")
     else:
         await client.send_message(sender.id, msg.PHOTO_BAD, parse_mode="HTML")
     raise StopPropagation
@@ -234,20 +255,19 @@ async def on_added(event):
     Greeting message in a chat.
     Function adds chat to mailing list.
     """
-    print("e.user_added")
     me = await client.get_me()
     if event.user_id != me.id:
         return
     global session
     if event.chat_id in session["chats"]:
-        print(f"Chat \"{event.chat.title}\" is already added\n")
+        logging.info("Chat \"%s\" is already added", event.chat.title)
     else:
         session["chats"][event.chat_id] = {
             "added_at": datetime.now().isoformat(),
             "last_activity": datetime.fromtimestamp(0).isoformat()
         }
         update_file()
-        print(f"Chat \"{event.chat.title}\" was successfully added\n")
+        logging.info("Chat \"%s\" was successfully added", event.chat.title)
     await client.send_message(event.chat_id, msg.JOINED_CHAT, parse_mode="HTML")
     raise StopPropagation
 
@@ -258,16 +278,15 @@ async def on_kicked(event):
     Function removes chat from mailing list.
     """
     me = await client.get_me()
-    print("e.user_kicked")
     if event.user_id != me.id:
         return
     global session
     if event.chat_id in session["chats"]:
         session["chats"].remove(event.chat_id)
         update_file()
-        print(f"Chat \"{event.chat.title}\" was successfully removed\n")
+        logging.info("Chat \"%s\" was successfully removed", event.chat.title)
     else:
-        print(f"Chat \"{event.chat.title}\" is already removed\n")
+        logging.info("Chat \"%s\" is already removed", event.chat.title)
     raise StopPropagation
 
 
@@ -275,10 +294,15 @@ if __name__ == '__main__':
     try:
         with open("./session.json", "r", encoding="utf-8") as file:
             session = json.load(file)
-    except:
+    except Exception:
         update_file()
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                        datefmt="%d-%b-%y %H:%M:%S",
+                        handlers=[logging.FileHandler("log.txt"), logging.StreamHandler()])
     client.start(bot_token=BOT_TOKEN)
     client.loop.create_task(notify())
     client.loop.create_task(custom_message())
     print("Bot started!\n")
+    logging.info("Bot started!")
     client.run_until_disconnected()
