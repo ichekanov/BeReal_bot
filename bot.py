@@ -303,6 +303,5 @@ if __name__ == '__main__':
     client.start(bot_token=BOT_TOKEN)
     client.loop.create_task(notify())
     client.loop.create_task(custom_message())
-    print("Bot started!\n")
     logging.info("Bot started!")
     client.run_until_disconnected()
