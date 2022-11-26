@@ -60,6 +60,27 @@ def calculate_time() -> int:
     return delta
 
 
+async def safe_send_message(chat_id: int | str, message: str) -> None:
+    """
+    Sends message to chat and handles exceptions.
+
+    Args:
+        chat_id: Chat ID, int or str.
+        message: Message text.
+    """
+    if isinstance(chat_id, str):
+        chat_id = int(chat_id)
+    try:
+        await client.send_message(chat_id, message, parse_mode="HTML")
+        logging.info("Sent message to %d: %s", chat_id, message)
+    except UserIsBlockedError:
+        session["chats"].pop(str(chat_id))
+        logging.info("Chat %d is blocked, removing from database", chat_id)
+        update_file()
+    except Exception as exc:
+        logging.exception("Error while sending message to %d: %s", chat_id, exc)
+
+
 async def custom_message():
     """
     Sends custom messages to all bot users.
@@ -74,14 +95,7 @@ async def custom_message():
             print("Cancelled\n")
             continue
         for user_id in session["users"].keys():
-            try:
-                await client.send_message(int(user_id), message, parse_mode="HTML")
-            except Exception as exc:
-                logging.exception("Error while sending message to %s: %s", user_id, exc)
-                if isinstance(exc, UserIsBlockedError):
-                    session["users"].pop(user_id)
-                    logging.info("User %s is blocked, removing from database", user_id)
-                    update_file()
+            await safe_send_message(user_id, message)
         print("Success\n")
         logging.info('Sent message "%s" to all %d users', message, len(session["users"]))
 
@@ -102,24 +116,17 @@ async def notify() -> None:
         update_file()
         all_user_ids = [int(m) for m in session["users"].keys()]
         for user_id in all_user_ids:
-            await client.send_message(user_id, msg.PHOTO_BEGIN, parse_mode="HTML")
+            await safe_send_message(user_id, msg.PHOTO_BEGIN)
         await asyncio.sleep((OVERALL_TIME-NOTIFY_TIME)*60)
 
         no_photos = [m for m in all_user_ids if not
                      session["users"][str(m)]["posted_media"]]
         for user_id in no_photos:
-            await client.send_message(user_id, msg.PHOTO_RUNOUT, parse_mode="HTML")
+            await safe_send_message(user_id, msg.PHOTO_RUNOUT)
         await asyncio.sleep(NOTIFY_TIME*60)
 
         for user_id in all_user_ids:
-            try:
-                await client.send_message(user_id, msg.PHOTO_END, parse_mode="HTML")
-            except Exception as exc:
-                logging.exception("Error while sending message to %d: %s", user_id, exc)
-                if isinstance(exc, UserIsBlockedError):
-                    session["users"].pop(str(user_id))
-                    logging.info("User %d is blocked, removing from database", user_id)
-                    update_file()
+            await safe_send_message(user_id, msg.PHOTO_END)
         photos_are_accepted = False
         await send_photos()
         for m in session["users"].keys():
@@ -153,6 +160,11 @@ async def send_photos():
                 elif media_type == "video":
                     await client.send_file(chat_id, path)
                     await client.send_message(chat_id, photo_msg, parse_mode="HTML")
+                logging.info("Sent %s to %d", path, chat_id)
+            except UserIsBlockedError:
+                session["chats"].pop(str(chat_id))
+                logging.info("Chat %d is blocked, removing from database", chat_id)
+                update_file()
             except Exception as exc:
                 logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
 
@@ -179,7 +191,7 @@ async def start(event):
         "timestamp": datetime.fromtimestamp(0).isoformat()
     }
     update_file()
-    await client.send_message(sender.id, msg.BEGIN, parse_mode="HTML")
+    await safe_send_message(sender.id, msg.BEGIN)
     raise StopPropagation
 
 
@@ -196,7 +208,7 @@ async def stop(event):
     else:
         logging.info("User removed earlier: %s %s", sender.first_name, sender.last_name)
     update_file()
-    await client.send_message(sender.id, msg.END, parse_mode="HTML")
+    await safe_send_message(sender.id, msg.END)
     raise StopPropagation
 
 
@@ -214,9 +226,9 @@ async def handle_image(event):
         session["users"][str(sender.id)]["media_path"] = path
         session["users"][str(sender.id)]["timestamp"] = datetime.now().isoformat()
         update_file()
-        await client.send_message(sender.id, msg.PHOTO_OK, parse_mode="HTML")
+        await safe_send_message(sender.id, msg.PHOTO_OK)
     else:
-        await client.send_message(sender.id, msg.PHOTO_BAD, parse_mode="HTML")
+        await safe_send_message(sender.id, msg.PHOTO_BAD)
     raise StopPropagation
 
 
@@ -233,9 +245,9 @@ async def handle_video(event):
         session["users"][str(sender.id)]["media_path"] = event.file.id
         session["users"][str(sender.id)]["timestamp"] = datetime.now().isoformat()
         update_file()
-        await client.send_message(sender.id, msg.CIRCLE_OK, parse_mode="HTML")
+        await safe_send_message(sender.id, msg.CIRCLE_OK)
     else:
-        await client.send_message(sender.id, msg.PHOTO_BAD, parse_mode="HTML")
+        await safe_send_message(sender.id, msg.PHOTO_BAD)
     raise StopPropagation
 
 
@@ -245,7 +257,7 @@ async def default_text(event):
     Default answer on direct messages.
     """
     sender = await event.get_sender()
-    await client.send_message(sender.id, msg.DEFAULT, parse_mode="HTML")
+    await safe_send_message(sender.id, msg.DEFAULT)
     raise StopPropagation
 
 
@@ -268,7 +280,7 @@ async def on_added(event):
         }
         update_file()
         logging.info("Chat \"%s\" was successfully added", event.chat.title)
-    await client.send_message(event.chat_id, msg.JOINED_CHAT, parse_mode="HTML")
+    await safe_send_message(event.chat_id, msg.JOINED_CHAT)
     raise StopPropagation
 
 
