@@ -74,9 +74,12 @@ async def safe_send_message(chat_id: int | str, message: str) -> None:
         await client.send_message(chat_id, message, parse_mode="HTML")
         logging.info("Sent message to %d: %s", chat_id, message)
     except UserIsBlockedError:
-        session["chats"].pop(str(chat_id))
         logging.info("Chat %d is blocked, removing from database", chat_id)
-        update_file()
+        try:
+            session["chats"].pop(str(chat_id))
+            update_file()
+        except KeyError:
+            logging.warning("Error while removing user: chat %d is blocked, but not in database", chat_id)
     except Exception as exc:
         logging.exception("Error while sending message to %d: %s", chat_id, exc)
 
@@ -161,10 +164,6 @@ async def send_photos():
                     await client.send_file(chat_id, path)
                     await client.send_message(chat_id, photo_msg, parse_mode="HTML")
                 logging.info("Sent %s to %d", path, chat_id)
-            except UserIsBlockedError:
-                session["chats"].pop(str(chat_id))
-                logging.info("Chat %d is blocked, removing from database", chat_id)
-                update_file()
             except Exception as exc:
                 logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
 
