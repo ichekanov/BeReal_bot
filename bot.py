@@ -52,7 +52,7 @@ def calculate_time() -> int:
         return datetime.fromisoformat(session["next_round"]).timestamp() - curr.timestamp()
     hour = randint(BEGIN_HOUR, END_HOUR-1)
     minute = randint(0, 59)
-    nxt = datetime(curr.year, curr.month, curr.day+1, hour, minute, 0)
+    nxt = datetime(curr.year, curr.month, curr.day) + datetime(0, 0, 1, hour, minute)
     session["next_round"] = nxt.isoformat()
     update_file()
     delta = nxt.timestamp() - curr.timestamp()
