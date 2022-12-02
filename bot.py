@@ -1,7 +1,7 @@
 import asyncio
 import configparser
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from random import randint
 import logging
 
@@ -52,7 +52,7 @@ def calculate_time() -> int:
         return datetime.fromisoformat(session["next_round"]).timestamp() - curr.timestamp()
     hour = randint(BEGIN_HOUR, END_HOUR-1)
     minute = randint(0, 59)
-    nxt = datetime(curr.year, curr.month, curr.day) + datetime(0, 0, 1, hour, minute)
+    nxt = datetime(curr.year, curr.month, curr.day) + timedelta(days=1, hours=hour, minutes=minute)
     session["next_round"] = nxt.isoformat()
     update_file()
     delta = nxt.timestamp() - curr.timestamp()
