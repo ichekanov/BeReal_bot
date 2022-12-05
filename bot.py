@@ -74,12 +74,12 @@ async def safe_send_message(chat_id: int | str, message: str) -> None:
         await client.send_message(chat_id, message, parse_mode="HTML")
         logging.info("Sent message to %d: %s", chat_id, message)
     except UserIsBlockedError:
-        logging.info("Chat %d is blocked, removing from database", chat_id)
+        logging.info("User %d is blocked, removing from database", chat_id)
         try:
-            session["chats"].pop(str(chat_id))
+            session["users"].pop(str(chat_id))
             update_file()
         except KeyError:
-            logging.warning("Error while removing user: chat %d is blocked, but not in database", chat_id)
+            logging.warning("Error while removing user: user %d is blocked, but not in database", chat_id)
     except Exception as exc:
         logging.exception("Error while sending message to %d: %s", chat_id, exc)
 
