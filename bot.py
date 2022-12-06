@@ -122,12 +122,14 @@ async def notify() -> None:
             await safe_send_message(user_id, msg.PHOTO_BEGIN)
         await asyncio.sleep((OVERALL_TIME-NOTIFY_TIME)*60)
 
+        all_user_ids = [int(m) for m in session["users"].keys()]
         no_photos = [m for m in all_user_ids if not
                      session["users"][str(m)]["posted_media"]]
         for user_id in no_photos:
             await safe_send_message(user_id, msg.PHOTO_RUNOUT)
         await asyncio.sleep(NOTIFY_TIME*60)
 
+        all_user_ids = [int(m) for m in session["users"].keys()]
         for user_id in all_user_ids:
             await safe_send_message(user_id, msg.PHOTO_END)
         photos_are_accepted = False
