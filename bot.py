@@ -137,13 +137,13 @@ async def notify() -> None:
         for m in session["users"].keys():
             session["users"][m]["posted_media"] = False
         update_file()
-        logging.info("Sent photos to %d chats", len(session["chats"]))
 
 
 async def send_photos():
     """
     Sends photos to chats according to the participating users and the users who sent the photos.
     """
+    active_chats = set()
     all_user_ids = [int(m) for m in session["users"].keys()]
     for chat_id in session["chats"]:
         chat_id = int(chat_id)
@@ -166,8 +166,13 @@ async def send_photos():
                     await client.send_file(chat_id, path)
                     await client.send_message(chat_id, photo_msg, parse_mode="HTML")
                 logging.info("Sent %s to %d", path, chat_id)
+                active_chats.add(chat_id)
             except Exception as exc:
                 logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
+    logging.info("Sent photos to %d chats", len(active_chats))
+    for chat_id in active_chats:
+        session["chats"][str(chat_id)]["last_activity"] = datetime.now().isoformat()
+    update_file()
 
 
 @client.on(NewMessage(pattern=r"(?i)^/start$", func=lambda e: e.is_private))
