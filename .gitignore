@@ -2,6 +2,9 @@ config.ini
 pics/*.jpg
 session_master.session
 session.json
+log.txt
+session_backup.json
+show_session.py
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,macos,windows,linux
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode,macos,windows,linux
