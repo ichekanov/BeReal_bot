@@ -46,7 +46,8 @@ def calculate_time() -> int:
     Returns
         Time delta in seconds until the next notification.
     """
-    # return 30*60
+    # nxt = datetime.now()+timedelta(seconds=10)
+    # delta = 10
     curr = datetime.now()
     if datetime.fromisoformat(session["next_round"]) > datetime.now():
         return datetime.fromisoformat(session["next_round"]).timestamp() - curr.timestamp()
@@ -198,6 +199,16 @@ async def start(event):
     }
     update_file()
     await safe_send_message(sender.id, msg.BEGIN)
+    if photos_are_accepted:
+        remained_time = datetime.fromisoformat(session["next_round"]) - datetime.now() + timedelta(minutes=OVERALL_TIME)
+        logging.info("Parsed datetime: %s", remained_time.total_seconds())
+        remained_time = int(remained_time.total_seconds()//60)
+        postfix = ""
+        if remained_time == 1:
+            postfix = "а"
+        elif remained_time in (2, 3, 4):
+            postfix = "ы"
+        await safe_send_message(sender.id, msg.REG_PHOTOS_ACCEPTED.format(remained_time, postfix))
     raise StopPropagation
 
 
