@@ -172,7 +172,10 @@ async def send_photos():
                 logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
     logging.info("Sent photos to %d chats", len(active_chats))
     for chat_id in active_chats:
-        session["chats"][str(chat_id)]["last_activity"] = datetime.now().isoformat()
+        try:
+            session["chats"][str(chat_id)]["last_activity"] = datetime.now().isoformat()
+        except Exception as exc:
+            logging.exception("Error while updating last activity for chat %s: %s", chat_id, exc)
     update_file()
 
 
