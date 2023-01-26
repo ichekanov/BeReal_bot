@@ -50,6 +50,7 @@ def calculate_time() -> int:
     # delta = 10
     curr = datetime.now()
     if datetime.fromisoformat(session["next_round"]) > datetime.now():
+        logging.info("Next notification will be sent at %s", datetime.fromisoformat(session["next_round"]).strftime("%d-%b-%y %H:%M:%S"))
         return datetime.fromisoformat(session["next_round"]).timestamp() - curr.timestamp()
     hour = randint(BEGIN_HOUR, END_HOUR-1)
     minute = randint(0, 59)
