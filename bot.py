@@ -149,7 +149,17 @@ async def send_photos():
     all_user_ids = [int(m) for m in session["users"].keys()]
     for chat_id in session["chats"]:
         chat_id = int(chat_id)
-        async for tg_user in client.iter_participants(chat_id):
+        try: 
+            participants = client.iter_participants(chat_id)
+        except Exception as exc:
+            logging.exception("Error while getting participants of chat %d: %s", chat_id, exc)
+            try:
+                session["chats"].pop(str(chat_id))
+                update_file()
+            except KeyError:
+                logging.warning("Error while removing chat: chat %d is not in database", chat_id)
+            continue
+        async for tg_user in participants:
             if not tg_user.id in all_user_ids:
                 continue
             user = session["users"][str(tg_user.id)]
