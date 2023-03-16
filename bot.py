@@ -151,6 +151,28 @@ async def send_photos():
         chat_id = int(chat_id)
         try: 
             participants = client.iter_participants(chat_id)
+            async for tg_user in participants:
+                if not tg_user.id in all_user_ids:
+                    continue
+                user = session["users"][str(tg_user.id)]
+                posted_media = user["posted_media"]
+                if not posted_media:
+                    continue
+                media_type = user["media_type"]
+                path = user["media_path"]
+                name = user["name"]
+                time = datetime.fromisoformat(user["timestamp"]).strftime("%H:%M")
+                photo_msg = f"<b>{name}</b>, @{tg_user.username}\n{time}"
+                try:
+                    if media_type == "photo":
+                        await client.send_file(chat_id, path, caption=photo_msg, parse_mode="HTML")
+                    elif media_type == "video":
+                        await client.send_file(chat_id, path)
+                        await client.send_message(chat_id, photo_msg, parse_mode="HTML")
+                    logging.info("Sent %s to %d", path, chat_id)
+                    active_chats.add(chat_id)
+                except Exception as exc:
+                    logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
         except Exception as exc:
             logging.exception("Error while getting participants of chat %d: %s", chat_id, exc)
             try:
@@ -159,28 +181,6 @@ async def send_photos():
             except KeyError:
                 logging.warning("Error while removing chat: chat %d is not in database", chat_id)
             continue
-        async for tg_user in participants:
-            if not tg_user.id in all_user_ids:
-                continue
-            user = session["users"][str(tg_user.id)]
-            posted_media = user["posted_media"]
-            if not posted_media:
-                continue
-            media_type = user["media_type"]
-            path = user["media_path"]
-            name = user["name"]
-            time = datetime.fromisoformat(user["timestamp"]).strftime("%H:%M")
-            photo_msg = f"<b>{name}</b>, @{tg_user.username}\n{time}"
-            try:
-                if media_type == "photo":
-                    await client.send_file(chat_id, path, caption=photo_msg, parse_mode="HTML")
-                elif media_type == "video":
-                    await client.send_file(chat_id, path)
-                    await client.send_message(chat_id, photo_msg, parse_mode="HTML")
-                logging.info("Sent %s to %d", path, chat_id)
-                active_chats.add(chat_id)
-            except Exception as exc:
-                logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
     logging.info("Sent photos to %d chats", len(active_chats))
     for chat_id in active_chats:
         try:
