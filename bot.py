@@ -86,6 +86,54 @@ async def safe_send_message(chat_id: int | str, message: str) -> None:
         logging.exception("Error while sending message to %d: %s", chat_id, exc)
 
 
+async def safe_send_photo(chat_id: int | str, file: str, caption: str) -> None:
+    """
+    Sends photo to chat and handles exceptions.
+
+    Args:
+        chat_id: Chat ID, int or str.
+        file: File path.
+        caption: Caption text.
+    """
+    if isinstance(chat_id, str):
+        chat_id = int(chat_id)
+    try:
+        await client.send_file(chat_id, file, caption=caption, parse_mode="HTML")
+    except UserIsBlockedError:
+        try:
+            session["users"].pop(str(chat_id))
+            update_file()
+        except KeyError:
+            logging.warning("Error while removing user: user %d is blocked, but not in database", chat_id)
+    except Exception as exc:
+        logging.exception("Error while sending photo to %d: %s", chat_id, exc)
+
+
+async def safe_send_videomsg(chat_id: int | str, file: str, caption: str) -> None:
+    """
+    Sends video message to chat and handles exceptions.
+
+    Args:
+        chat_id: Chat ID, int or str.
+        file: File path.
+        caption: Caption text.
+    """
+    if isinstance(chat_id, str):
+        chat_id = int(chat_id)
+    try:
+        await client.send_file(chat_id, file)
+        if caption:
+            await client.send_message(chat_id, caption, parse_mode="HTML")
+    except UserIsBlockedError:
+        try:
+            session["users"].pop(str(chat_id))
+            update_file()
+        except KeyError:
+            logging.warning("Error while removing user: user %d is blocked, but not in database", chat_id)
+    except Exception as exc:
+        logging.exception("Error while sending video message to %d: %s", chat_id, exc)
+
+
 async def custom_message():
     """
     Sends custom messages to all bot users.
@@ -147,7 +195,8 @@ async def send_photos():
     """
     active_chats = set()
     all_user_ids = [int(m) for m in session["users"].keys()]
-    for chat_id in session["chats"]:
+    chats = session["chats"].keys()
+    for chat_id in chats:
         chat_id = int(chat_id)
         try: 
             participants = client.iter_participants(chat_id)
@@ -162,17 +211,13 @@ async def send_photos():
                 path = user["media_path"]
                 name = user["name"]
                 time = datetime.fromisoformat(user["timestamp"]).strftime("%H:%M")
-                photo_msg = f"<b>{name}</b>, @{tg_user.username}\n{time}"
-                try:
-                    if media_type == "photo":
-                        await client.send_file(chat_id, path, caption=photo_msg, parse_mode="HTML")
-                    elif media_type == "video":
-                        await client.send_file(chat_id, path)
-                        await client.send_message(chat_id, photo_msg, parse_mode="HTML")
-                    logging.info("Sent %s to %d", path, chat_id)
-                    active_chats.add(chat_id)
-                except Exception as exc:
-                    logging.exception("Error while sending media to chat %s for user %d: %s", chat_id, tg_user.id, exc)
+                caption = f"<b>{name}</b>, @{tg_user.username}\n{time}"
+                if media_type == "photo":
+                    await safe_send_photo(chat_id, path, caption)
+                elif media_type == "video":
+                    await safe_send_videomsg(chat_id, path, caption)
+                logging.info("Sent %s to %d", path, chat_id)
+                active_chats.add(chat_id)
         except Exception as exc:
             logging.exception("Error while getting participants of chat %d: %s", chat_id, exc)
             try:
@@ -180,7 +225,6 @@ async def send_photos():
                 update_file()
             except KeyError:
                 logging.warning("Error while removing chat: chat %d is not in database", chat_id)
-            continue
     logging.info("Sent photos to %d chats", len(active_chats))
     for chat_id in active_chats:
         try:
